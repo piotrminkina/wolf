@@ -461,6 +461,12 @@ struct StreamSession {
    */
   std::shared_ptr<immer::atom<char>> held_modifiers = std::make_shared<immer::atom<char>>();
 
+  /**
+   * The last active_gamepad_mask the client sent in a CONTROLLER_MULTI packet.
+   * Only the ENet thread writes it, and it is only used to log when the mask changes.
+   */
+  std::shared_ptr<immer::atom<short>> active_gamepad_mask = std::make_shared<immer::atom<short>>();
+
   std::shared_ptr<std::optional<input::PenTablet>> pen_tablet =
       std::make_shared<std::optional<input::PenTablet>>(); /* Optional, will be set on first use */
 };

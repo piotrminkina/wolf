@@ -1,5 +1,6 @@
 #include "state/sessions.hpp"
 
+#include <algorithm>
 #include <boost/endian/conversion.hpp>
 #include <boost/locale.hpp>
 #include <control/input_handler.hpp>
@@ -8,6 +9,7 @@
 #include <immer/box.hpp>
 #include <platforms/input.hpp>
 #include <string>
+#include <vector>
 
 namespace control {
 
@@ -618,10 +620,27 @@ void pen(const PEN_PACKET &pkt, events::StreamSession &session) {
   }
 }
 
+static std::vector<int> held_pad_numbers(const events::JoypadList &joypads) {
+  std::vector<int> numbers;
+  for (const auto &joypad : joypads) {
+    numbers.push_back(joypad.first);
+  }
+  std::sort(numbers.begin(), numbers.end());
+  return numbers;
+}
+
 void controller_arrival(const CONTROLLER_ARRIVAL_PACKET &pkt,
                         events::StreamSession &session,
                         immer::box<std::shared_ptr<ENetPeer>> connected_client) {
   auto joypads = session.joypads->load();
+  logs::log(
+      logs::debug,
+      "[INPUT] CONTROLLER_ARRIVAL controller {} type {} capabilities {:#04x} button flags {:#010x} (held pads: {})",
+      pkt.controller_number,
+      (int)pkt.controller_type,
+      pkt.capabilities,
+      pkt.support_button_flags,
+      held_pad_numbers(*joypads));
   if (joypads->find(pkt.controller_number)) {
     // TODO: should we replace it instead?
     logs::log(logs::debug,
@@ -662,6 +681,15 @@ void controller_multi(const CONTROLLER_MULTI_PACKET &pkt,
                       events::StreamSession &session,
                       immer::box<std::shared_ptr<ENetPeer>> connected_client) {
   auto joypads = session.joypads->load();
+  if (auto last_mask = session.active_gamepad_mask->load(); last_mask != pkt.active_gamepad_mask) {
+    session.active_gamepad_mask->store(pkt.active_gamepad_mask);
+    logs::log(logs::debug,
+              "[INPUT] active_gamepad_mask changed {:#06x} -> {:#06x} (packet for controller {}, held pads: {})",
+              (uint16_t)last_mask,
+              (uint16_t)pkt.active_gamepad_mask,
+              pkt.controller_number,
+              held_pad_numbers(*joypads));
+  }
   std::shared_ptr<events::JoypadTypes> selected_pad;
   if (auto joypad = joypads->find(pkt.controller_number)) {
     selected_pad = std::move(*joypad);
