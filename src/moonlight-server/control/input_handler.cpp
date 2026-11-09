@@ -3,6 +3,7 @@
 #include <boost/endian/conversion.hpp>
 #include <boost/locale.hpp>
 #include <control/input_handler.hpp>
+#include <crypto/crypto.hpp>
 #include <events/events.hpp>
 #include <helpers/logger.hpp>
 #include <immer/box.hpp>
@@ -16,6 +17,19 @@ using namespace wolf::core::input;
 using namespace wolf::core;
 using namespace std::string_literals;
 using namespace moonlight::control;
+
+std::string stable_joypad_mac(std::size_t session_id, int controller_number) {
+  auto digest = crypto::sha256(fmt::format("{}:{}", session_id, controller_number));
+  // The first octet is unicast (bit 0 clear) and locally administered (bit 1 set)
+  auto first_octet = (std::stoi(digest.substr(0, 2), nullptr, 16) & 0xFC) | 0x02;
+  return fmt::format("{:02x}:{}:{}:{}:{}:{}",
+                     first_octet,
+                     digest.substr(2, 2),
+                     digest.substr(4, 2),
+                     digest.substr(6, 2),
+                     digest.substr(8, 2),
+                     digest.substr(10, 2));
+}
 
 std::shared_ptr<events::JoypadTypes> create_new_joypad(const events::StreamSession &session,
                                                        immer::box<std::shared_ptr<ENetPeer>> connected_client,
@@ -122,8 +136,13 @@ std::shared_ptr<events::JoypadTypes> create_new_joypad(const events::StreamSessi
   }
   case wolf::config::ControllerType::PS: {
     logs::log(logs::info, "Creating PS joypad for controller {}", controller_number);
-    auto result = PS5Joypad::create(
-        {.name = "Wolf DualSense (virtual) pad", .vendor_id = 0x054C, .product_id = 0x0CE6, .version = 0x8111});
+    auto mac = stable_joypad_mac(session.session_id, controller_number);
+    logs::log(logs::debug, "[INPUT] PS joypad for controller {} uses MAC {}", controller_number, mac);
+    auto result = PS5Joypad::create({.name = "Wolf DualSense (virtual) pad",
+                                     .vendor_id = 0x054C,
+                                     .product_id = 0x0CE6,
+                                     .version = 0x8111,
+                                     .device_uniq = mac});
     if (!result) {
       logs::log(logs::error, "Failed to create PS5 joypad: {}", result.getErrorMessage());
       return {};
