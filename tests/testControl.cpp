@@ -3,9 +3,11 @@
 
 using Catch::Matchers::Equals;
 
+#include <control/control.hpp>
 #include <control/input_handler.hpp>
 #include <moonlight/control.hpp>
 using namespace moonlight::control;
+using namespace wolf::core;
 
 static std::string to_string(const ControlEncryptedPacket &packet) {
   return {(char *)&packet, packet.full_size()};
@@ -97,4 +99,24 @@ TEST_CASE("control joypad input packets") {
 TEST_CASE("Stable joypad MAC", "[CONTROL]") {
   // sha256("7:2") starts with 8d8ea3758174. The first octet has bit 0 set and bit 1 clear, so both rules show up.
   REQUIRE_THAT(control::stable_joypad_mac(7, 2), Equals("8e:8e:a3:75:81:74"));
+}
+
+TEST_CASE("Current session", "[CONTROL]") {
+  auto running_sessions = std::make_shared<immer::atom<immer::vector<events::StreamSession>>>();
+  events::StreamSession session = {.enet_secret_payload = 1234, .session_id = 7};
+
+  SECTION("No running session") {
+    REQUIRE_FALSE(control::is_current_session(running_sessions, session));
+  }
+
+  running_sessions->update([&](const auto &sessions) { return sessions.push_back(session); });
+
+  SECTION("Same id and secret") {
+    REQUIRE(control::is_current_session(running_sessions, session));
+  }
+
+  SECTION("Same id, secret of an older connection") {
+    session.enet_secret_payload = 1;
+    REQUIRE_FALSE(control::is_current_session(running_sessions, session));
+  }
 }
